@@ -42,3 +42,37 @@ done
 ---
 
 *最后更新：2026-07-19 by 小飞*
+
+## 安全高压线（2026-07-19 强制执行）
+
+### 危险函数名单
+`exec()` `shell_exec()` `system()` `popen()` `passthru()`
+
+### 强制扫描流程
+**每次 push 代码前必须执行：**
+```bash
+grep -rn 'shell_exec\|exec\s*(|system\s*(|popen\s*(' . --include="*.php" | grep -v escapeshellarg
+```
+- 有输出的一律**不打上线**，必须先修复
+- 新增含危险函数的 PHP 文件，必须同时提交 escapeshellarg 保护方案
+
+### 已验证的安全写法
+```php
+// ✅ 安全：参数来自白名单/固定值
+$cmd = "systemctl restart " . escapeshellarg($service);
+
+// ✅ 安全：用 PHP 原生替代 shell 命令
+$content = file_get_contents($logFile);
+$lines = file($logFile, FILE_IGNORE_NEW_LINES);
+
+// ❌ 危险：用户输入直接拼 shell 命令
+$cmd = "tail -n $lines $file"; // 未过滤
+
+// ❌ 危险：即使过滤了也容易出错，用 wrapper
+$cmd = "sudo systemctl $action $service"; // action无白名单
+```
+
+### wrapper 脚本（必须使用）
+- `service-ctrl` — 系统服务管理（nginx/php8.3-fpm/mariadb/redis/supervisor）
+- `crons-ctrl` — 定时任务管理
+- 所有 systemctl 调用必须走这两个 wrapper，不允许直接拼 shell 命令
