@@ -5,7 +5,7 @@
 # 保留策略：每日保留7天
 #=========================================
 
-set -e
+set -euo pipefail
 BACKUP_ROOT="/home/ubuntu/backups"
 DATE=$(date +%Y%m%d_%H%M%S)
 LOG="$BACKUP_ROOT/backup.log"
@@ -31,16 +31,19 @@ declare -A DBS=(
   ["nav_db"]="e0575.org"
   ["myarticle"]="myarticle.com.cn"
   ["omni_db"]="omni.shanyin.xyz"
-  ["serveradmin_db"]="admin.shanyin.xyz"
+  ["server_admin"]="admin.shanyin.xyz"
 )
 
 for db in "${!DBS[@]}"; do
   site="${DBS[$db]}"
   out="$BACKUP_ROOT/db/${db}_${DATE}.sql.gz"
   log "备份数据库: $db ($site)"
-  mysqldump -uroot -p"$MYSQL_ROOT" --single-transaction "$db" 2>/dev/null | gzip > "$out"
+  mysqldump -uroot -p"$MYSQL_ROOT" --single-transaction "$db" 2>/dev/null | gzip > "$out" || {
+    log "ERROR: 数据库 $db 备份失败"
+    continue
+  }
   # 清理7天前
-  find "$BACKUP_ROOT/db" -name "${db}_*.sql.gz" -mtime +7 -delete
+  find "$BACKUP_ROOT/db" -name "${db}_*.sql.gz" -mtime +7 -delete 2>/dev/null || true
 done
 
 #-----------------------------------------------
@@ -62,7 +65,7 @@ for site in "${SITES[@]}"; do
   if [ -d "$srcdir" ]; then
     log "备份代码: $site"
     sudo tar -czf "$out" -C "$srcdir" . 2>/dev/null
-    find "$BACKUP_ROOT/code" -name "${site}_*.tar.gz" -mtime +7 -delete
+    find "$BACKUP_ROOT/code" -name "${site}_*.tar.gz" -mtime +7 -delete 2>/dev/null || true
   else
     log "跳过代码: $site (目录不存在)"
   fi
@@ -72,11 +75,11 @@ done
 # 3. Nginx 配置备份
 #-----------------------------------------------
 log "备份 Nginx 配置"
-tar -czf "$BACKUP_ROOT/nginx/nginx_conf_${DATE}.tar.gz" \
+sudo tar -czf "$BACKUP_ROOT/nginx/nginx_conf_${DATE}.tar.gz" \
   /etc/nginx/conf.d/ \
-  /etc/nginx/ssl/ \
+  /etc/letsencrypt/ \
   /home/ubuntu/webapps/ 2>/dev/null
-find "$BACKUP_ROOT/nginx" -name "nginx_conf_*.tar.gz" -mtime +7 -delete
+find "$BACKUP_ROOT/nginx" -name "nginx_conf_*.tar.gz" -mtime +7 -delete 2>/dev/null || true
 
 log "========== 备份完成 =========="
 log "备份占用空间:"
